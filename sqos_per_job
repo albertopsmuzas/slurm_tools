@@ -1,0 +1,2 @@
+#!/bin/bash
+sacctmgr show qos $1 format=name%30,priority,maxwalldurationperjob%15,maxnodesperjob,maxcpusperjob,maxtresperjob%40

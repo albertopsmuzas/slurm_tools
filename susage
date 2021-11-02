@@ -1,0 +1,513 @@
+#!/bin/bash
+###################################################################################################
+# Script to view the detailed usage of a certain partition node per node (SLURM)
+#
+# v 1.0 ----> | A.S Muzas (19/Dec/2012)
+#             |   - Plot running jobs in each node
+#             |   - Plot all PARTITION pending jobs 
+#             |   - FORMAT: CPU's requested, USER name, JOB NAME
+#             ------------------------------------------------------------------------
+# v 1.5 ----> | A.S. Muzas (01/March/2013)	
+#             |   - Plot the wall time for each running and pending job.
+#             |   - Better format definition without tabs
+#             |   - Argument control
+#             |   - Old version had problems with nodes shared by partitions. Solved now.
+#             |   - FORMAT: CPU's requested, USER name, JOB NAME, WALL TIME
+#             ------------------------------------------------------------------------
+# v 2.0 ----> | A.S. Muzas (15/January/2014)
+#             |   - Some options can be specified. Options parsed by getopt
+#             |   - Colored output if wished (--formatted option)
+#             |   - Can be specified a single node to be plotted (--node option)
+#             |   - Print in bold letters those jobs that belong to the USER
+#             |   - Perfomance improved erasing unecessary loops. Better use of awesome awk. 
+#             |   - Can search nodes inside a partition with at least "n" cores availables. (--search option)
+#             |   - FORMAT: CPU's requested, USER name, STATUS, JOB NAME, WALL TIME
+#             |   - Deals with status "MIXED" in nodes
+#             ------------------------------------------------------------------------
+# v 3.0 ----> | A.S. Muzas (13/October/2015)
+#             |   - Changed nomenclature to fit SLURM standards
+#             |   - Changed some functions to obtain output faster
+#             |   - Now, cpus ids are printed for running jobs. Job ids are printed as well.
+####################################################################################################
+version="3.0"
+# ============
+# Some formats|===================================================================================
+# ============
+txtund=$(tput sgr 0 1) # Print underline letters
+txtbld=$(tput bold) # Print bold letters
+bldred=${txtbld}$(tput setaf 1) #  Print bold red letters
+bldgrn=${txtbld}$(tput setaf 2) #  Print bold green letters
+bldyel=${txtbld}$(tput setaf 3) #  Print bold yellow letters
+bldblu=${txtbld}$(tput setaf 4) #  Print bold blue letters
+bldpur=${txtbld}$(tput setaf 5) #  Print bold purple letters
+bldwht=${txtbld}$(tput setaf 7) #  Print bold white letters.
+txtrst=$(tput sgr0) # Reset color specifications
+# =======================
+# Functions : OPERATIONS |=========================================================================
+# =======================
+function deb_print () #<--- ARGUM <string> print debugging message
+{
+	if [ $debugging == "yes" ]; then
+		echo DEBUGGING: $*
+	fi
+}
+#-------------------------------------------------------------------------------------------------
+function total_cpus() #<--- ARGUM 1: PARTITION NAME 
+{
+	sinfo -o "%30C" -p $1 | awk -F "/" 'NR>1{print $4}'
+}
+#------------------------------------------------------------------------------------------------
+function available_cpus ()  #<--- ARGUM 1: PARTITION NAME 
+{
+	sinfo -o "%30C" -p $1 | awk -F "/" 'NR>1{print $2}'
+}
+#------------------------------------------------------------------------------------------------
+function node_status() #<--- ARGUM 2: NODE NAME(1), PARTITION NAME(2) 
+{
+	sinfo -o "%20T" -n $1 -p $2 | awk 'NR>1{print $1}'
+}
+#------------------------------------------------------------------------------------------------
+function node_total_cpus() #<--- ARGUM 2: NODE NAME(1), PARTITION NAME(2) 
+{
+	sinfo -o "%30C" -n $1 -p $2 | awk -F "/" 'NR>1{print $4}'
+}
+#------------------------------------------------------------------------------------------------
+function cpu_allocation_scheme() #<--- ARGUM 2: JOBID(1), NODE NAME(2)
+{
+	scontrol -d show job $1 | grep  CPU_IDs= | grep $2 | awk '{print $2}' | awk -F '=' '{print $2}'
+}
+#------------------------------------------------------------------------------------------------
+function node_processors_info() #<--- ARGUM 2: NODE NAME(1), PARTITION NAME(2) 
+{
+	sinfo -o "%20z" -n $1 -p $2 | awk 'NR>1{print $1}'
+}
+#------------------------------------------------------------------------------------------------
+function node_available_cpus () #<--- ARGUM 2: NODE NAME(1), PARTITION NAME(2)
+{
+	sinfo -o "%30C" -n $1 -p $2 | awk -F "/" 'NR>1{print $2}'
+}
+#------------------------------------------------------------------------------------------------
+function search_cpus () # <--- ARGUM 2: PARTITION NAME(1), CPUS(2)
+{
+	part=$1
+	target_cpus=$2
+	avail="no"
+	n=$(sinfo -hp $1 -o "%n" | wc -l)
+	declare -i count
+	count=0
+	echo
+	echo "*********************************************************************************"
+	echo "     Searching for nodes with at least $target_cpus available cores in partition $partition:"
+	sinfo -ho "%20n %20C" -p $part | while read node cpus;do
+		(( count++ ))
+		declare -i nnode
+		nnode=`echo $cpus | cut -f 2 -d "/"`
+		if [ "$nnode" -ge "$target_cpus" ]; then
+			avail="yes"
+			echo "          - $node has $nnode idle cpus."
+		fi
+		if [ "$avail" == "no" ] && [ "$count" == $n ]; then
+			exit 1 # Exit loop with status 1
+		fi
+	done	
+	if [ "$?" == 1 ]; then
+		echo
+		echo "     SORRY, there are not nodes with so many available cpus."
+		echo
+	fi
+	echo "*********************************************************************************"
+	return 0
+}
+# =======================
+# Functions : FORMAT     |=========================================================================
+# =======================
+function printpattern ()
+{
+	repeat=$1
+	string=$2
+	declare -i i
+        i=0
+        while [ $i -le $repeat ]; do
+                printf "$string"
+                (( i++ ))
+        done
+
+}
+#------------------------------------------------------------------------------------------------
+function structure1 ()
+{
+	 printf " |"
+        printpattern 6 " "
+        printpattern 71 "="
+        printf "\n"
+}
+#------------------------------------------------------------------------------------------------
+function structure2 ()
+{
+	 printf " |"
+        printpattern 6 " "
+        printpattern 71 "-"
+        printf "\n"
+}
+# =================================
+# Functions : INITIAL MAIN PART    |=========================================================================
+# =================================
+function print_main_header () #<--- ARGUM 1: FORMAT
+{	
+	format=$1
+	if [ "$format" == "fun" ];then
+		printf "$(tput bold)"
+	fi
+	printpattern 28 "#"
+	printf "\n"
+	printf "%-12.12s   %-10.10s   %c\n"  "# PARTITION:" "$partition" "#" 
+	printf "%-12.12s   %-10.10s   %c"    "# TOT CPUS:"  "`total_cpus $partition`" "#"
+	printpattern 55 "#" 
+	printf "\n"
+	printf "%-12.12s   %-10.10s   %c\n"  "# AV CPUS:" "`available_cpus $partition`" "#"
+	printpattern 28 "#"
+	if [ "$format" == "fun" ];then
+		printf "$(tput sgr0)"
+	fi
+	printf "\n"
+}
+# ==============================
+# Functions : node JOBS PART    |=========================================================================
+# ==============================
+function print_node_header () #<--- ARGUM 3: node NAME, PARTITION NAME, FORMAT
+{
+	node=$1
+	partition=$2
+	format=$3
+	statusnow=`node_status $node $partition | tr '[:lower:]' '[:upper:]'`
+	totalcpus=`node_total_cpus $node $partition`
+	info=`node_processors_info $node $partition`
+	printf " |\n"	
+	structure1
+	printf "%-9.9s" " |-----> "
+	printf "%-12.12s %-12.12s" "NODE NAME:" "$node"
+	if [ "$format" == "fun"  ]; then
+		if [ "$statusnow" == "IDLE" ] || [ "$statusnow" == "COMPLETING" ]; then
+			printf "     STATUS: $(tput bold)$(tput setaf 2)%-10.10s$(tput sgr0)\n" "$statusnow"
+		elif [ "$statusnow" == "MIXED" ]; then
+			printf "     STATUS: $(tput bold)$(tput setaf 3)%-10.10s$(tput sgr0)\n" "$statusnow"
+		else
+			printf "     STATUS: $(tput bold)$(tput setaf 1)%-10.10s$(tput sgr0)\n" "$statusnow"
+		fi
+	elif [ "$format" == "plain" ]; then
+			printf "     STATUS: %-10.10s\n" "$statusnow"
+	fi
+
+	printf "%-8.8s %-12.12s %-12.12s %-26.26s %-10.10s\n" " |       " "TOT CPUS:" "$totalcpus" "    SOCKETS:CORES:THREADS:" "$info"
+
+	if [ "$statusnow" == "ALLOCATED" ] || [ "$statusnow" == "ALLOCATED*" ] || [ "$statusnow" == "COMPLETING" ] || [ "$statusnow" == "MIXED" ]; then
+		printf "%-8.8s %-12.12s %-5.5s\n" " |       " "AV CPUS:" "`node_available_cpus $node $partition`"
+ 		structure1
+		return 0 # Exit function with status 0
+	elif [ "$statusnow" == "IDLE" ]; then
+		printf "%-8.8s %-12.12s %-5.5s\n" " |       " "AV CPUS:" "$totalcpus"
+		structure1
+		return 1
+	else
+		structure1
+		return 1 # Exit function with status 1
+	fi
+}
+#---------------------------------------------------------------------------------------------------
+function print_node_titles () #<--- ARGUM 0: Stand-alone
+{
+	format_text="%-8.8s %-5.5s  %-10.10s  %-4.4s   %-27.27s  %-10.10s  %-10.10s\n"
+	printf "$format_text" " |        " "CPUS" "USER" "STAT" "JOB ID(JOB NAME)"  "WALL TIME" "CPU ID"
+	structure2
+	return 0
+}
+#---------------------------------------------------------------------------------------------------
+function print_node_data () #<--- ARGUM 2: NODE NAME(1), FORMAT(2)
+{
+	node=$1
+	format=$2
+	if [ "$format" == "fun" ]; then
+		format_green="$(tput setaf 7)%-8.8s $(tput setaf 2)%-5.5s  %-10.10s  %-4.4s   %-.10s%-20.20s  %-10.10s  %-10s$(tput sgr0)\n"
+		format_yell="$(tput setaf 7)%-8.8s $(tput setaf 3)%-5.5s  %-10.10s  %-4.4s   %-.10s%-20.20s  %-10.10s  %-10s$(tput sgr0)\n"
+		format_green_bold="$(tput setaf 7)%-8.8s $(tput bold)$(tput setaf 2)%-5.5s  %-10.10s  %-4.4s   %-.10s%-20.20s  %-10.10s  %-10s$(tput sgr0)\n"
+		format_yell_bold="$(tput setaf 7)%-8.8s $(tput bold)$(tput setaf 3)%-5.5s  %-10.10s  %-4.4s   %-.10s%-20.20s  %-10.10s  %-10s$(tput sgr0)\n"
+	
+	elif [ "$format" == "plain" ]; then
+		format_green="%-8.8s %-5.5s  %-10.10s  %-4.4s   %-.10s%-20.20s  %-10.10s  %-10s\n"
+		format_yell="%-8.8s %-5.5s  %-10.10s  %-4.4s   %-.10s%-20.20s  %-10.10s  %-10s\n"
+		format_green_bold="%-8.8s %-5.5s  %-10.10s  %-4.4s   %-.10s%-20.20s  %-10.10s  %-10s\n"
+		format_yell_bold="%-8.8s %-5.5s  %-10.10s  %-4.4s   %-.10s%-20.20s  %-10.10s  %-10s\n"
+	fi
+	squeue -ho "%10u %5t %10C %20i %5l %18j" -w $node | while read user stat cpus jobid wall jobname;do
+		cpuId=$(cpu_allocation_scheme $jobid $node)
+		if [[ $stat == R ]] && [[ $user == ${USER} ]]; then
+			printf "$format_green_bold" " |      " $cpus $user $stat $jobid \($jobname\) $wall $cpuId
+		elif [[ $stat == R ]]; then
+			printf "$format_green" " |      " $cpus $user $stat $jobid \($jobname\) $wall $cpuId
+	   elif [[ $stat == S ]] && [[ $user == ${USER} ]]; then
+			printf "$format_yell_bold" " |      " $cpus $user $stat $jobid \($jobname\) $wall $cpuId
+	   elif [[ $stat == S ]]; then
+			printf "$format_yell" " |      " $cpus $user $stat $jobid \($jobname\) $wall $cpuId
+		else
+			echo Unclassificable job status?
+		fi
+	done
+	#squeue -ho "%10u %5t %10C %j %5l" -w $node | awk -v f_g="$format_green" -v f_y="$format_yell" -v f_bg="$format_green_bold" -v f_by="format_yell_bold" -v u=${USER} '{
+		#if(($2 == "R")&&($1 == u))
+			#printf f_bg," |      ",$3,$1,$2,$4,$5;
+		#else if(($2 == "R"))
+			#printf f_g," |      ",$3,$1,$2,$4,$5;
+		#else if (($2 == "S")&&($1 == u))
+			#printf f_by," |      ",$3,$1,$2,$4,$5;
+		#else if (($2 == "S"))
+			#printf f_y," |      ",$3,$1,$2,$4,$5;
+		#}'
+	return 0
+}
+# =================================
+# Functions : PENDING JOBS PART    |=========================================================================
+# =================================
+function print_pending_header() # <--- ARGUM 0: Stand-alone
+{
+	printf " |\n"	
+	structure1
+	printf "%-9.9s" " |-----> "
+	printf "%-s\n"  "PENDING (PD)"
+	structure1
+	return 0
+}
+#---------------------------------------------------------------------------------------------------
+function print_pending_data()  #<--- ARGUM 2: PARTITION NAME(1), FORMAT(2)
+{
+	partition=$1
+	format=$2
+	if [ "$format" == "fun" ]; then
+		format_plain="%-8.8s %-5.5s   %-10.10s   %-.10s(%-18.18s)      %-10.10s\n"
+		format_bold="%-8.8s $(tput bold)%-5.5s   %-10.10s   %-.10s(%-18.18s)      %-10.10s$(tput sgr0)\n"
+	elif [ "$format" == "plain" ]; then 
+		format_plain="%-8.8s %-5.5s   %-10.10s   %-.10s(%-18.18s)      %-10.10s\n"
+		format_bold="%-8.8s %-5.5s   %-10.10s   %-.10s(%-18.18s)      %-10.10s\n"
+	fi
+	# As this jobs are pending jobs, the first field of sjobs alias, is empty (nodelist)
+	squeue -ho "%10C %10u %18j %5l %20i" -p $partition -t PD | awk -v f_p="$format_plain" -v f_b="$format_bold" -v u=${USER} '{
+		if(($2 == u)) 
+			printf f_b," |      ",$1,$2,$5,$3,$4;
+		else 
+			printf f_p," |      ",$1,$2,$5,$3,$4;
+		}'
+	return 0	
+}
+#---------------------------------------------------------------------------------------------------
+function print_pending_titles () #<--- ARGUM 0: Stands alone
+{
+	format_text="%-8.8s %-5.5s   %-10.10s   %-30.30s   %-10.10s\n"
+	printf "$format_text" " |        " "CPUS" "USER" "JOB ID(JOB NAME)"  "WALL TIME"
+	structure2
+	return 0
+}
+# ===========================
+# Functions : ENDING PART    |=========================================================================
+# ===========================
+function print_end() #<--- ARGUM 1: FORMAT
+{	
+	format=$1
+	printf "\n"
+	if [ "$format" == "fun" ]; then
+		printf "$(tput bold)"
+	fi
+	printpattern 85 "#"
+	printf "\n\n"
+	if [ "$format" == "fun" ]; then
+		printf "$(tput sgr0)"
+	fi
+}
+#====================
+# HEY HO!, LET'S GO! |=============================================================================
+#====================
+PARSED_OPTIONS=$(getopt -n "$0" -o p:n:hfs:ld -l "partition:, node:, help, formatted, search:, list, debugging" -- "$@")
+if [ "$?" -ne 0 ]; then
+	exit 1 # Exit if getopt failed
+fi
+eval set -- "$PARSED_OPTIONS"
+given_p="no"
+given_n="no"
+ok="empty"
+format="plain"
+listing="no"
+debugging="no"
+helping="no"
+if [ "$*" == "--" ]; then
+	echo "$0 will not do anything without an argument."
+	echo "Check $0 --help"
+	exit 1
+fi
+while true; do
+	# Options should finish with "shift" command or "shift 2" if they require 1 argument.
+	case "$1" in
+		# -h or --help option ----------------------------------------------
+		-h | --help )
+		echo "------------------------------------------------------------------------------"
+		echo "Progam name: susage"
+		echo "Version: $version"
+		echo "Location: $0"
+		echo "Purpose: friendly-user tool to manage the SLURM queue system status"
+		echo "Usage: susage -p <partition name> [-n <node name> -h -f -s <cpus> -l -d]"  
+		echo
+		echo "Options:"
+		echo "-h, --help                  : Print this help dialogue. If this option is chosen, other options will be "
+		echo "                              ignored."
+		echo "-n, --node <node name>      : Set the node to be analyzed. Cannot be used alone without -p option"
+		echo "                              -p option should be given before -n option."
+		echo "                              The keyword" '"pending"' "can be given as an argument. In this case only"
+		echo "                              pending jobs for <partition> are plotted."  
+		echo "-p, --partition <partition> : Set the partition to be analyzed. If -n option is not used, print"
+		echo "                              information for all nodes belonging to <partition>" 
+		echo "                              -p option should be given before -n option."
+		echo "-f, --formatted             : Output is formatted with colors and other stuff. Not convenient if this"
+		echo "                              output is piped into applications like grep, more, less etc. or redirected"
+		echo "                              to plain text files." 
+		echo "                              Legend:   - green text  : running jobs."
+		echo "                                        - yellow text : stopped jobs."
+		echo "                                        - bold text   : user jobs."
+		echo "-s, --search   <cpus>       : Search for nodes in <partition> that have at least <cpus> available cpus	"
+		echo "                              If -p option is given alone (without -n), only search output is printed. In case"
+		echo "                              that -n or -l options are also given, search output will be plotted on top."
+		echo "                              -p option should be given before -s option."
+		echo "-l, --list                  : Only node headers are shown."
+		echo "-d, --debugging             : Print debugging messages. For testing purpose."
+		echo "------------------------------------------------------------------------------"
+		helping="yes"
+		shift;;
+		# -d or --debugging option ----------------------------------------------
+		-d | --debugging )
+			debugging="yes"
+			shift;;
+		# -l or --list option ----------------------------------------------
+		-l | --list )
+			listing="yes"
+			shift;;
+		# -p or --partition option -----------------------------------------
+		-p | --partition )
+		if [ -n "$2" ]; then
+			partition="$2"
+			status=$( sinfo -p $partition | awk 'END{if(NR==1) print "error"}' )
+			if [ "$status" != error ]; then
+				given_p="yes"
+				ok="yes"
+			else
+				echo 'The partition given as an argument does not exist. Check: sinfo -o "%P".'
+				exit 1
+			fi
+		fi 
+		shift 2;;
+		# -n or --node option --------------------------------------------
+		-n | --node )
+		if [ -n "$2" ] && [ "$given_p" == "yes" ]; then
+			node="$2"
+			status=$( sinfo -o "%N" -p $partition -n $node | awk 'END{if(NR==1) print "error"}' )
+			if [ "$status" != error ] || [ "$node" == pending ]; then
+				given_n="yes"
+				ok="yes"
+			else 
+				given_n="no"
+				ok="no"
+				echo 'node' "<$node>" 'does not belong to partition' "<$partition>"'. Check: sinfo -o "%P %n".'
+				exit 1
+			fi			
+		elif [ "$given_p" == "no" ]; then
+			echo "--partition option should be given before --node option"
+			echo "Sorry for this inconvenience."
+			exit 1		
+		fi
+		shift 2;;
+		# -f, --formatted option -----------------------------------------------------------
+		-f | --formatted )
+			format="fun"
+			shift;;
+		# -f, --formatted option -----------------------------------------------------------
+		-s | --search )
+			if [ -n "$2" ] && [ "$given_p" == "yes" ]; then
+				target_cpus="$2"
+				search="yes"
+				ok="yes"
+			elif [ "$given_p" == "no" ]; then
+				echo "--partition option should be given before --search option"
+				echo "Sorry for this inconvenient."
+				exit 1		
+			fi
+			shift 2;;	
+		# Error control and Output control -------------------------------------------------
+		-- )
+			deb_print "OPTIONS CHOSEN"
+			deb_print "=============="
+			deb_print "debugging: " $debugging
+			deb_print "ok: " $ok
+			deb_print "given_n: " $given_n
+			deb_print "given_p: " $given_p
+			deb_print "listing: " $listing
+			deb_print "search:  " $search 
+			deb_print "format:  " $format
+			deb_print "helping: " $helping
+			if [ "$helping" == "yes" ]; then
+				deb_print "ok .eq. msg ---> help was chosen ---> exiting 0"
+				exit 0
+			elif [ "$ok" == "no" ]; then
+				deb_print "ok .eq. no ---> exiting status 1"
+				exit 1
+			elif [ "$ok" == "empty" ]; then
+				echo "Wrong syntax. At least one option is needed to work."
+				echo "Check $0 --help"
+				exit 1
+			elif [ "$ok" == "yes" ]; then
+				echo
+				deb_print "OK is yes"
+				print_main_header $format
+				if [ "$given_n" == "no" ]; then
+					deb_print "no -n option chosen"
+					if [ "$search" == "yes" ];then
+						deb_print "search was chosen"
+						search_cpus $partition $target_cpus
+						if [ "$listing" == "no" ]; then 
+							deb_print "No list. Exit 0"
+							print_end $format
+							exit 0 
+						fi
+					fi
+					if [ "$listing" == 'no' ]; then
+						print_pending_header
+						print_pending_titles
+						print_pending_data $partition $format
+					fi
+					sinfo -ho "%n" -p $partition | while read node; do
+						print_node_header $node $partition $format
+						if [ "$?" == 0 ] && [ "$listing" == "no" ]; then
+							print_node_titles
+							print_node_data $node $format
+						fi
+					done
+				elif [ "$given_n" == "yes" ] && [ "$given_p" == "yes" ] && [ "$node" == "pending" ];then
+					if [ "$search" == "yes" ];then
+						search_cpus $partition $target_cpus
+					fi
+					print_pending_header
+					if [ "$listing" == "no" ]; then
+						print_pending_titles
+						print_pending_data $partition $format
+					fi
+				elif [ "$given_n" == "yes" ] && [ "$given_p" == "yes" ]; then
+					if [ "$search" == "yes" ];then
+						search_cpus $partition $target_cpus
+					fi
+					print_node_header $node $partition $format
+						if [ "$?" == 0 ] && [ "$listing" == "no" ]; then
+							print_node_titles
+							print_node_data $node $format
+						fi
+				fi
+				deb_print "Normal exiting for OK yes"
+				print_end $format
+				shift
+				exit 0 
+			fi	
+	esac
+done

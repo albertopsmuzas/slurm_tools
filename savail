@@ -1,0 +1,64 @@
+#!/bin/bash
+#----------------------------------------------------
+# Script to view quickly the usage of all partitions (SLURM)
+# v 1.0 ---> A. Muzas 19/12/2012
+# v 2.0 ---> A. Muzas 26/10/2015 better perfomance
+# v 2.1 ---> A. Muzas 12/06/2021 parse arguments in functions to avoid "*" on partition name
+#----------------------------------------------------
+# ======================
+# Interesting functions |=========================================================================
+# ======================
+function total_cpus() #<--- ARGUM 1: PARTITION NAME(1)
+{
+	sinfo -h -o "%30C" -p ${1//"*"} | awk -F "/" '{print $4}'
+}
+#------------------------------------------------------------------------------------------------
+function available_cpus ()  #<--- ARGUM 1: PARTITION NAME(1)
+{
+	sinfo -h -o "%30C" -p ${1//"*"} | awk -F "/" '{print $2}'
+}
+#------------------------------------------------------------------------------------------------
+function running_jobs () #<--- ARGUM 1: PARTITION NAME(1)
+{
+	squeue -ht R -p ${1//"*"} | wc -l
+}
+#------------------------------------------------------------------------------------------------
+function pending_jobs () #<--- ARGUM 1: PARTITION NAME(1)
+{
+	squeue -ht PD -p ${1//"*"} | wc -l
+}
+#------------------------------------------------------------------------------------------------
+function pending_cpus_requested () #<--- ARGUM 1: PARTITION NAME(1)
+{
+	squeue -ho "%10C" -t PD -p ${1//"*"} | awk 'BEGIN{count=0}{count=count+$1}END{print count}'
+}
+
+# ===================
+# HEY HO!, LET'S GO! |============================================================================
+# ===================
+# Format desired: Partition, total cpus, available cpus, jobs running(R), jobs pending(PD), Requested cpus  
+header="\n %10s %10s %10s %10s %10s %20s"
+format="%10s %10i %10i %10i %10i %15i\n"
+printf "$header" "PARTITION" "TOT CPUS" "AV CPUS" "JOBS R" "PD JOBS" "PD REQUESTED CPUS"
+printf "${header}\n" "=========" "========" "=======" "======" "=======" "================="
+##
+if [ $# != 0 ];then
+	for partition in $*; do
+		let tot_cpus=$(total_cpus $partition)
+		let av_cpus=$(available_cpus $partition)
+		let jobs_r=$(running_jobs $partition)
+		let jobs_pd=$(pending_jobs $partition)
+		let req_cpus=$(pending_cpus_requested $partition)
+		printf "$format" "$partition" "$tot_cpus" "$av_cpus" "$jobs_r" "$jobs_pd" "$req_cpus"
+	done
+else
+	sinfo -h -o "%20P" | while read partition; do
+		let tot_cpus=$(total_cpus $partition)
+		let av_cpus=$(available_cpus $partition)
+		let jobs_r=$(running_jobs $partition)
+		let jobs_pd=$(pending_jobs $partition)
+		let req_cpus=$(pending_cpus_requested $partition)
+		printf "$format" "$partition" "$tot_cpus" "$av_cpus" "$jobs_r" "$jobs_pd" "$req_cpus"
+	done
+fi
+echo
