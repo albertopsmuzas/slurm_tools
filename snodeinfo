@@ -1,0 +1,14 @@
+#!/bin/bash
+sinfo --Node --format="%.10N %.20R %.11t %.8z %.8m %.8e %.15f %.15b %.15G %E" $*
+
+# -N     -> one node per line
+# %N     -> node name
+# %P     -> partition name
+# %T(%t) -> State of nodes extended (compact)
+# %z     -> extended processor information
+# %m     -> size of memory per node in MBi
+# %e     -> size of free memory per node in MBi
+# %f     -> features available per node
+# %b     -> features currently active per node
+# %G     -> generic resources available per node
+# %E     -> reason for not availability
