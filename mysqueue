@@ -1,17 +1,17 @@
 #!/bin/bash
-squeue -u ${USER} --format="%.18i %.11Q %.9P %.9q %.5C %.6D %.6z %.15j %.8u %.2t %.10M %.10l %.20S %.10f %R" $*
+squeue -u ${USER} --format="%.18i %.3t %.15j %.5C %.6D %.6z %.10M %.10l %.20S %.10f %.9P %.9q %.11Q %R" $*
 
 # %i -> job or job step id.
-# %p -> priority of job.
-# %P -> partition for job step.
-# %q -> quality of service
+# %t -> job state in compact form
+# %j -> job or job step name.
 # %C -> current number of CPUS allocated for job.
 # %D -> number of nodes allocated to the job/ min. number nodes for pending job
 # %z -> number of requested sockets/cores/threads
-# %j -> job or job step name.
-# %u -> user name for job or job step.
-# %t -> job state in compact form
+# %p -> priority of job.
 # %M -> time used by the job
 # %l -> wall time
 # %f -> features required by job
+# %P -> partition for job step.
+# %q -> quality of service
+# %Q -> priority in integer form
 # %R -> reason of waiting, cancellation, etc.
