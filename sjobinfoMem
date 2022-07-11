@@ -1,0 +1,3 @@
+#!/bin/bash
+
+sacct --format="JobID%15,JobName%30,State%10,Start%20,End%20,Elapsed%15,Timelimit%11,QOS%8,Partition%10,AveVMSize%10,MaxVMSize%10,ReqMem%10,ExitCode%10" -u ${USER} $*

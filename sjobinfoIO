@@ -1,0 +1,5 @@
+#!/bin/bash
+
+sacct --format="JobID%15,jobName%30,State%10,Start%20,End%20,Elapsed%15,Partition%10,NodeList%15,MaxDiskRead%18,MaxDiskReadNode%18,MaxDiskReadTask%18,MaxDiskWrite%18,MaxDiskWriteNode%18,MaxDiskWriteTask%18" -u ${USER} $*
+
+

@@ -1,0 +1,5 @@
+#!/bin/bash
+
+sacct --format="JobID%15,jobName%30,State%10,Start%20,End%20,Elapsed%15,SystemCPU%15,CPUTime%15,TimeLimit%11,QOS%8,Partition%10,NTasks%10,NNodes%10,NodeList%15,AllocCPUS%10,ReqCPUS%8,ExitCode%10" -u ${USER} $*
+
+
