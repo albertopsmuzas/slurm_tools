@@ -1,6 +1,0 @@
-#!/bin/bash
-if [[ $# != 1 ]]; then
-	echo One argument needed: project name.
-	exit 1
-fi
-sacctmgr show ass where account=$1 user=$USER format=account%20,user%10,partition%10

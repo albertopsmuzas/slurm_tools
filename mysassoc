@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# shows all associations attached to current user (username,account,partition,QOS)
+
+sacctmgr show ass where user=${USER} $* format=user%20,account%20,partition%10,qos%40

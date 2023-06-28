@@ -1,2 +1,0 @@
-#!/bin/bash
-sacctmgr show ass where partition=$1 format=user%20,account%20,partition%10,qos%40

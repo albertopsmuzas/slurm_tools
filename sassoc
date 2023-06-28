@@ -1,2 +1,5 @@
 #!/bin/bash
+
+# shows account,user,partition,share,quos
+
 sacctmgr show ass where $* format=account%20,user%20,partition%10,share%10,qos%40
