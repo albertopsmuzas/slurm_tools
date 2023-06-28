@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# outputs pending jobs in priority order and priority details
+
+sprio -l --sort="-yu" $*
