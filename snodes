@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# print information about current state of nodes
+
+# Format description
+#-------------------
+# %P -> partition name
+# %T -> state
+# %D -> nodes
+# %f -> features
+# %N -> Nodenameso
+# %c -> cpus per node
+
+# Options description
+#--------------------
+# -N node by node
+
+#sinfo --format "%.20P %.20N %.11T %.5c %f" -N $*
+sinfo --Format="Partition:.15 ,NodeList:.15 ,StateCompact:.10 ,SocketCoreThread:.10 ,CPUsLoad:.8% ,Memory:.10 ,FreeMem:.10 ,Features" -N -r $*
